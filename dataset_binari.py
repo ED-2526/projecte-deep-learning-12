@@ -74,6 +74,42 @@ def get_train_val_datasets(data_dir, train_ratio=0.8, seed=42):
     
     return train_dataset, val_dataset
 
+def get_train_test_validation(data_dir, train_ratio=0.7, val_ratio=0.15, seed=42):
+    """
+    Funció que llegeix la carpeta, extreu els pacients, els barreja i retorna
+    tres Datasets (Train, Validation i Test) separats correctament.
+    """
+
+    # 1. Obtenir tots els arxius
+    all_images = glob.glob(os.path.join(data_dir, "images", "*.npy"))
+    
+    # 2. Extreure els IDs únics dels pacients (ex: 'BraTS20_Training_001')
+    patient_ids = list(set([os.path.basename(f).split('_slice')[0] for f in all_images]))
+    
+    # 3. Barrejar la llista de pacients (amb llavor fixa)
+    random.seed(seed)
+    random.shuffle(patient_ids)
+    
+    # 4. Calcular els índexs de tall per a 3 blocs
+    total_patients = len(patient_ids)
+    split1 = int(total_patients * train_ratio)
+    split2 = split1 + int(total_patients * val_ratio)
+    
+    # 5. Tallar la llista en 3 parts
+    train_patients = patient_ids[:split1]               # 0% al 70%
+    val_patients = patient_ids[split1:split2]           # 70% al 85%
+    test_patients = patient_ids[split2:]                # 85% al final (100%)
+    
+    print(f"Total pacients: {total_patients}")
+    print(f"Repartiment: Train: {len(train_patients)} | Val: {len(val_patients)} | Test: {len(test_patients)}")
+    
+    # 6. Instanciar els 3 Datasets
+    train_dataset = BraTS2DDataset(data_dir, patient_ids=train_patients)
+    val_dataset = BraTS2DDataset(data_dir, patient_ids=val_patients)
+    test_dataset = BraTS2DDataset(data_dir, patient_ids=test_patients)
+    
+    return train_dataset, val_dataset, test_dataset
+
 # --- PROVA ---
 if __name__ == "__main__":
     DIR_PROCESSED = r"C:\Users\joanb\Documents\uab\3r\XN\projecte-deep-learning-12\data_processed"

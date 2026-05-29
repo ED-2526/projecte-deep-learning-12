@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 
 # Importem el teu dataset.py (assegura't que el fitxer es digui dataset.py)
-from dataset import get_train_val_datasets
+from dataset import get_train_val_datasets, get_train_test_validation
 
 # ==========================================
 # 1. ARQUITECTURA CUSTOM UNET
@@ -131,14 +131,14 @@ def calculate_metrics(logits, true_masks, threshold=0.5):
 def main():
     config = {
         "lr": 1e-4,
-        "epochs": 40,
-        "batch_size": 8,  # Reduït per seguretat de memòria amb MyUNet (més filtres)
+        "epochs": 30,
+        "batch_size": 32,  # Reduït per seguretat de memòria amb MyUNet (més filtres)
         "data_dir": os.path.abspath("/home/edxnG12/data_processed_12/"),
         "dropout": 0.3,
         "weight_decay": 1e-3
     }
 
-    wandb.init(project="brats-uab-project", config=config, name="MyUNet_Final_Custom")
+    wandb.init(project="brats-uab-project-aa", config=config, name="prova_MyUNet_Final_Custom")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Transformacions corregides per a versions noves d'Albumentations
@@ -153,9 +153,14 @@ def main():
         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
     ])
 
-    train_ds, val_ds = get_train_val_datasets(config["data_dir"], transformations=train_transform)
+    #train_ds, val_ds = get_train_val_datasets(config["data_dir"])
+    train_ds, val_ds, test_ds = get_train_test_validation(config["data_dir"])
+
+    train_ds.augmentations = train_transform
+    
     train_loader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
     val_loader = DataLoader(val_ds, batch_size=config["batch_size"], shuffle=False, num_workers=4, pin_memory=True)
+    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=4)
 
     # Instanciem el nostre model propi
     model = MyUNet(n_channels=4, n_classes=1, dropout_rate=config["dropout"]).to(device)
@@ -230,7 +235,7 @@ def main():
 
         if avg_v_dice > best_val_dice:
             best_val_dice = avg_v_dice
-            torch.save(model.state_dict(), "./checkpoints/best_custom_unet.pth")
+            torch.save(model.state_dict(), "./checkpoints/prova_best_custom_unet.pth")
             print(f"🌟 Millora detectada! Dice: {best_val_dice:.4f}")
 
     wandb.finish()

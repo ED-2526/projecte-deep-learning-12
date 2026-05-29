@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import segmentation_models_pytorch as smp
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from train_wb_1 import MyUNet
 
 # Intentem importar les mètriques clíniques de medpy
 try:
@@ -15,6 +16,7 @@ except ImportError:
     from medpy.metric.binary import hd95, sensitivity, specificity, dc
 
 from dataset import get_train_val_datasets
+from attention import AttentionUNet
 
 def calculate_clinical_metrics(pred, truth):
     """Calcula mètriques evitant errors si no hi ha tumor"""
@@ -40,15 +42,16 @@ def calculate_clinical_metrics(pred, truth):
 def main():
     # 1. Rutes (Ajustades a la teva màquina)
     DATA_DIR = "/home/edxnG12/data_processed_12"
-    MODEL_PATH = "./checkpoints/unet_resnet34_best.pth"
-    WORST_CASES_DIR = "/home/edxnG12/Grafics/worst_cases_analysis"
+    MODEL_PATH = "./checkpoints/best_custom_unet.pth"
+    WORST_CASES_DIR = "./worst_cases_analysis"
     os.makedirs(WORST_CASES_DIR, exist_ok=True)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🩺 Iniciant Avaluació Clínica a: {device}")
     
     # 2. Carregar Model
-    model = smp.Unet(encoder_name="resnet34", in_channels=4, classes=1).to(device)
+    #model = smp.Unet(encoder_name="resnet34", in_channels=4, classes=1).to(device)
+    model = MyUNet(n_channels=4, n_classes=1, dropout_rate=0.3).to(device)
     if os.path.exists(MODEL_PATH):
         model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
         print("✅ Model carregat correctament.")

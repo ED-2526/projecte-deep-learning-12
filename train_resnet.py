@@ -9,16 +9,19 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 
-from dataset import get_train_val_datasets
+from dataset import get_train_val_datasets, get_train_test_validation
 
 class JointLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, dice_weight=0.7):
         super().__init__()
         self.dice = smp.losses.DiceLoss(mode='binary', from_logits=True)
         self.bce = nn.BCEWithLogitsLoss()
+
+        self.dw = dice_weight
+        self.bw = 1 - dice_weight
         
     def forward(self, out, target):
-        return 0.5 * self.dice(out, target) + 0.5 * self.bce(out, target)
+        return self.dw * self.dice(out, target) + self.bw * self.bce(out, target)
 
 def calculate_metrics(logits, true_masks, threshold=0.5):
     probs = torch.sigmoid(logits)
@@ -36,15 +39,15 @@ def main():
         "lr": 1e-4,
         "epochs": 30, 
         "batch_size": 32, 
-        "data_dir": "/home/edxnG12/data_processed_12",
+        "data_dir": "/home/datasets/BraTS2020/data_processed_12",
         "backbone": "resnet34"
     }
 
     wandb.init(
-        project="brats-uab-project2",
+        project="brats-uab-project-aa",
         entity="1710333-universitat-aut-noma-de-barcelona",
         config=config,
-        name="unet-resnet34-run"
+        name="prova_unet-resnet34-run"
     )
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -60,7 +63,8 @@ def main():
     ])
 
     # 2. Obtenemos los datasets usando TU código original (sin pasarle augmentations)
-    train_ds, val_ds = get_train_val_datasets(config["data_dir"])
+    #train_ds, val_ds = get_train_val_datasets(config["data_dir"])
+    train_ds, val_ds, test_ds = get_train_test_validation(config["data_dir"])
     
     # 3. EL TRUCO: Le inyectamos las transformaciones solo al dataset de entrenamiento
     train_ds.augmentations = train_transform
@@ -68,6 +72,7 @@ def main():
     # 4. Creamos los Loaders
     train_loader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
     val_loader = DataLoader(val_ds, batch_size=config["batch_size"], shuffle=False, num_workers=4, pin_memory=True)
+    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=4)
 
     model = smp.Unet(encoder_name=config["backbone"], encoder_weights="imagenet", in_channels=4, classes=1).to(device)
     optimizer = AdamW(model.parameters(), lr=config["lr"], weight_decay=1e-5)
@@ -82,7 +87,7 @@ def main():
         print(f"\n--- Epoch {epoch+1}/{config['epochs']} ---")
         
         model.train()
-        train_loss = 0.0
+        train_loss, train_dice = 0.0, 0.0
         for imgs, masks in tqdm(train_loader, desc="Entrenant"):
             imgs, masks = imgs.to(device), masks.to(device)
             optimizer.zero_grad()
@@ -91,6 +96,8 @@ def main():
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            d, _ = calculate_metrics(logits, masks)
+            train_dice += d
 
         model.eval()
         val_loss, val_dice, val_iou = 0.0, 0.0, 0.0
@@ -106,17 +113,19 @@ def main():
                 val_iou += b_iou
 
         avg_t_loss = train_loss / len(train_loader)
+        avg_t_dice = train_dice / len(train_loader)
         avg_v_loss = val_loss / len(val_loader)
         avg_v_dice = val_dice / len(val_loader)
         avg_v_iou = val_iou / len(val_loader)
         
         scheduler.step(avg_v_dice)
 
-        print(f"Train Loss: {avg_t_loss:.4f} | Val Loss: {avg_v_loss:.4f} | Val Dice: {avg_v_dice:.4f}")
+        print(f"Train Loss: {avg_t_loss:.4f} | Train Dice: {avg_t_dice:.4f} | Val Loss: {avg_v_loss:.4f} | Val Dice: {avg_v_dice:.4f}")
 
         wandb.log({
             "epoch": epoch + 1,
             "train_loss": avg_t_loss,
+            "train_dice": avg_t_dice,
             "val_loss": avg_v_loss,
             "val_dice": avg_v_dice,
             "val_iou": avg_v_iou,
@@ -125,7 +134,7 @@ def main():
 
         if avg_v_dice > best_val_dice:
             best_val_dice = avg_v_dice
-            torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, "unet_resnet34_best.pth"))
+            torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, "prova_unet_resnet34_bestt.pth"))
             print("🌟 Nou millor model guardat!")
 
     wandb.finish()
